@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure;
 using Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests.TestTransport;
+using Microsoft.AspNetCore.Server.Kestrel.Tests;
 using Microsoft.AspNetCore.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -67,15 +68,17 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task OnStartingThrowsWhenSetAfterResponseHasAlreadyStarted()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task OnStartingThrowsWhenSetAfterResponseHasAlreadyStarted(bool isPipeTest)
         {
             InvalidOperationException ex = null;
 
             using (var server = new TestServer(async context =>
             {
-                await context.Response.WriteAsync("hello, world");
-                await context.Response.Body.FlushAsync();
+                await context.Response.WriteResponseAsync("hello, world", isPipeTest);
+                await context.Response.FlushResponseAsync(isPipeTest);
                 ex = Assert.Throws<InvalidOperationException>(() => context.Response.OnStarting(_ => Task.CompletedTask, null));
             }, new TestServiceContext(LoggerFactory)))
             {
@@ -148,19 +151,19 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             {
                 try
                 {
-                    await context.Response.WriteAsync("hello", cts.Token).DefaultTimeout();
+                    await context.Response.WriteResponseAsync("hello", isPipeTest, cts.Token).DefaultTimeout();
 
                     var data = new byte[1024 * 1024 * 10];
 
                     var timerTask = Task.Delay(TimeSpan.FromSeconds(1));
-                    var writeTask = context.Response.Body.WriteAsync(data, 0, data.Length, cts.Token).DefaultTimeout();
+                    var writeTask = context.Response.WriteResponseBodyAsync(data, 0, data.Length, isPipeTest, cts.Token).DefaultTimeout();
                     var completedTask = await Task.WhenAny(writeTask, timerTask);
 
                     while (completedTask == writeTask)
                     {
                         await writeTask;
                         timerTask = Task.Delay(TimeSpan.FromSeconds(1));
-                        writeTask = context.Response.Body.WriteAsync(data, 0, data.Length, cts.Token).DefaultTimeout();
+                        writeTask = context.Response.WriteResponseBodyAsync(data, 0, data.Length, isPipeTest, cts.Token).DefaultTimeout();
                         completedTask = await Task.WhenAny(writeTask, timerTask);
                     }
 
@@ -299,13 +302,15 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 sendMalformedRequest: true);
         }
 
-        [Fact]
-        public async Task OnCompletedExceptionShouldNotPreventAResponse()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task OnCompletedExceptionShouldNotPreventAResponse(bool isPipeTest)
         {
             using (var server = new TestServer(async context =>
             {
                 context.Response.OnCompleted(_ => throw new Exception(), null);
-                await context.Response.WriteAsync("hello, world");
+                await context.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -330,8 +335,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task OnCompletedShouldNotBlockAResponse()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task OnCompletedShouldNotBlockAResponse(bool isPipeTest)
         {
             var delayTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -341,7 +348,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 {
                     await delayTcs.Task;
                 });
-                await context.Response.WriteAsync("hello, world");
+                await context.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -440,13 +447,15 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 && ((BadHttpRequestException)w.Exception).StatusCode == StatusCodes.Status400BadRequest);
         }
 
-        [Fact]
-        public async Task TransferEncodingChunkedSetOnUnknownLengthHttp11Response()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task TransferEncodingChunkedSetOnUnknownLengthHttp11Response(bool isPipeTest)
         {
             using (var server = new TestServer(async httpContext =>
             {
-                await httpContext.Response.WriteAsync("hello, ");
-                await httpContext.Response.WriteAsync("world");
+                await httpContext.Response.WriteResponseAsync("hello, ", isPipeTest);
+                await httpContext.Response.WriteResponseAsync("world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -527,8 +536,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task ResponseBodyNotWrittenOnHeadResponseAndLoggedOnlyOnce()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ResponseBodyNotWrittenOnHeadResponseAndLoggedOnlyOnce(bool isPipeTest)
         {
             const string response = "hello, world";
 
@@ -540,8 +551,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
 
             using (var server = new TestServer(async httpContext =>
             {
-                await httpContext.Response.WriteAsync(response);
-                await httpContext.Response.Body.FlushAsync();
+                await httpContext.Response.WriteResponseAsync(response, isPipeTest);
+                await httpContext.Response.FlushResponseAsync(isPipeTest);
             }, new TestServiceContext(LoggerFactory, mockKestrelTrace.Object)))
             {
                 using (var connection = server.CreateConnection())
@@ -569,8 +580,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 kestrelTrace.ConnectionHeadResponseBodyWrite(It.IsAny<string>(), response.Length), Times.Once);
         }
 
-        [Fact]
-        public async Task ThrowsAndClosesConnectionWhenAppWritesMoreThanContentLengthWrite()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ThrowsAndClosesConnectionWhenAppWritesMoreThanContentLengthWrite(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory)
             {
@@ -580,8 +593,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             using (var server = new TestServer(httpContext =>
             {
                 httpContext.Response.ContentLength = 11;
-                httpContext.Response.Body.Write(Encoding.ASCII.GetBytes("hello,"), 0, 6);
-                httpContext.Response.Body.Write(Encoding.ASCII.GetBytes(" world"), 0, 6);
+                httpContext.Response.WriteResponse(Encoding.ASCII.GetBytes("hello,"), 0, 6, isPipeTest);
+                httpContext.Response.WriteResponse(Encoding.ASCII.GetBytes(" world"), 0, 6, isPipeTest);
                 return Task.CompletedTask;
             }, serviceContext))
             {
@@ -612,16 +625,18 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
 
         }
 
-        [Fact]
-        public async Task ThrowsAndClosesConnectionWhenAppWritesMoreThanContentLengthWriteAsync()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ThrowsAndClosesConnectionWhenAppWritesMoreThanContentLengthWriteAsync(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory);
 
             using (var server = new TestServer(async httpContext =>
             {
                 httpContext.Response.ContentLength = 11;
-                await httpContext.Response.WriteAsync("hello,");
-                await httpContext.Response.WriteAsync(" world");
+                await httpContext.Response.WriteResponseAsync("hello,", isPipeTest);
+                await httpContext.Response.WriteResponseAsync(" world", isPipeTest);
             }, serviceContext))
             {
                 using (var connection = server.CreateConnection())
@@ -647,8 +662,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 logMessage.Exception.Message);
         }
 
-        [Fact]
-        public async Task InternalServerErrorAndConnectionClosedOnWriteWithMoreThanContentLengthAndResponseNotStarted()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task InternalServerErrorAndConnectionClosedOnWriteWithMoreThanContentLengthAndResponseNotStarted(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory)
             {
@@ -659,7 +676,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             {
                 var response = Encoding.ASCII.GetBytes("hello, world");
                 httpContext.Response.ContentLength = 5;
-                httpContext.Response.Body.Write(response, 0, response.Length);
+                httpContext.Response.WriteResponse(response, 0, response.Length, isPipeTest);
                 return Task.CompletedTask;
             }, serviceContext))
             {
@@ -687,8 +704,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 logMessage.Exception.Message);
         }
 
-        [Fact]
-        public async Task InternalServerErrorAndConnectionClosedOnWriteAsyncWithMoreThanContentLengthAndResponseNotStarted()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task InternalServerErrorAndConnectionClosedOnWriteAsyncWithMoreThanContentLengthAndResponseNotStarted(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory);
 
@@ -696,7 +715,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             {
                 var response = Encoding.ASCII.GetBytes("hello, world");
                 httpContext.Response.ContentLength = 5;
-                return httpContext.Response.Body.WriteAsync(response, 0, response.Length);
+                return httpContext.Response.WriteResponseBodyAsync(response, 0, response.Length, isPipeTest);
             }, serviceContext))
             {
                 using (var connection = server.CreateConnection())
@@ -723,8 +742,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 logMessage.Exception.Message);
         }
 
-        [Fact]
-        public async Task WhenAppWritesLessThanContentLengthErrorLogged()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WhenAppWritesLessThanContentLengthErrorLogged(bool isPipeTest)
         {
             var logTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
             var mockTrace = new Mock<IKestrelTrace>();
@@ -738,7 +759,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             using (var server = new TestServer(async httpContext =>
             {
                 httpContext.Response.ContentLength = 13;
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory, mockTrace.Object)))
             {
                 using (var connection = server.CreateConnection())
@@ -777,8 +798,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                         ex.Message.Equals($"Response Content-Length mismatch: too few bytes written (12 of 13).", StringComparison.Ordinal))));
         }
 
-        [Fact]
-        public async Task WhenAppWritesLessThanContentLengthButRequestIsAbortedErrorNotLogged()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WhenAppWritesLessThanContentLengthButRequestIsAbortedErrorNotLogged(bool isPipeTest)
         {
             var requestAborted = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
             var mockTrace = new Mock<IKestrelTrace>();
@@ -791,7 +814,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 });
 
                 httpContext.Response.ContentLength = 12;
-                await httpContext.Response.WriteAsync("hello,");
+                await httpContext.Response.WriteResponseAsync("hello,", isPipeTest);
 
                 // Wait until the request is aborted so we know HttpProtocol will skip the response content length check.
                 await requestAborted.Task.DefaultTimeout();
@@ -866,10 +889,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             Assert.All(error, message => message.Message.Equals("Response Content-Length mismatch: too few bytes written (0 of 5)."));
         }
 
-        [Theory]
-        [InlineData(false)]
-        [InlineData(true)]
-        public async Task WhenAppSetsContentLengthToZeroAndDoesNotWriteNoErrorIsThrown(bool flushResponse)
+        [Theory] // TODO MAKE THIS WORK WITH PIPES
+        [InlineData(false, false)]
+        [InlineData(false, true)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        public async Task WhenAppSetsContentLengthToZeroAndDoesNotWriteNoErrorIsThrown(bool flushResponse, bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory);
 
@@ -879,7 +904,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
 
                 if (flushResponse)
                 {
-                    await httpContext.Response.Body.FlushAsync();
+                    await httpContext.Response.FlushResponseAsync(isPipeTest);
                 }
             }, serviceContext))
             {
@@ -907,8 +932,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         // If a message is received with both a Transfer-Encoding and a
         // Content-Length header field, the Transfer-Encoding overrides the
         // Content-Length.
-        [Fact]
-        public async Task WhenAppSetsTransferEncodingAndContentLengthWritingLessIsNotAnError()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WhenAppSetsTransferEncodingAndContentLengthWritingLessIsNotAnError(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory);
 
@@ -916,7 +943,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             {
                 httpContext.Response.Headers["Transfer-Encoding"] = "chunked";
                 httpContext.Response.ContentLength = 13;
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, serviceContext))
             {
                 using (var connection = server.CreateConnection())
@@ -944,8 +971,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         // If a message is received with both a Transfer-Encoding and a
         // Content-Length header field, the Transfer-Encoding overrides the
         // Content-Length.
-        [Fact]
-        public async Task WhenAppSetsTransferEncodingAndContentLengthWritingMoreIsNotAnError()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WhenAppSetsTransferEncodingAndContentLengthWritingMoreIsNotAnError(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory);
 
@@ -953,7 +982,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             {
                 httpContext.Response.Headers["Transfer-Encoding"] = "chunked";
                 httpContext.Response.ContentLength = 11;
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, serviceContext))
             {
                 using (var connection = server.CreateConnection())
@@ -1004,15 +1033,17 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task HeadResponseBodyNotWrittenWithAsyncWrite()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task HeadResponseBodyNotWrittenWithAsyncWrite(bool isPipeTest)
         {
             var flushed = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             using (var server = new TestServer(async httpContext =>
             {
                 httpContext.Response.ContentLength = 12;
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
                 await flushed.Task;
             }, new TestServiceContext(LoggerFactory)))
             {
@@ -1036,8 +1067,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task HeadResponseBodyNotWrittenWithSyncWrite()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task HeadResponseBodyNotWrittenWithSyncWrite(bool isPipeTest)
         {
             var flushed = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -1046,7 +1079,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             using (var server = new TestServer(async httpContext =>
             {
                 httpContext.Response.ContentLength = 12;
-                httpContext.Response.Body.Write(Encoding.ASCII.GetBytes("hello, world"), 0, 12);
+                httpContext.Response.WriteResponse(Encoding.ASCII.GetBytes("hello, world"), 0, 12, isPipeTest);
                 await flushed.Task;
             }, serviceContext))
             {
@@ -1070,17 +1103,19 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task ZeroLengthWritesFlushHeaders()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ZeroLengthWritesFlushHeaders(bool isPipeTest)
         {
             var flushed = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             using (var server = new TestServer(async httpContext =>
             {
                 httpContext.Response.ContentLength = 12;
-                await httpContext.Response.WriteAsync("");
+                await httpContext.Response.WriteResponseAsync("", isPipeTest);
                 await flushed.Task;
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1105,8 +1140,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task AppCanWriteOwnBadRequestResponse()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task AppCanWriteOwnBadRequestResponse(bool isPipeTest)
         {
             var expectedResponse = string.Empty;
             var responseWritten = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1122,7 +1159,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                     expectedResponse = ex.Message;
                     httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
                     httpContext.Response.ContentLength = ex.Message.Length;
-                    await httpContext.Response.WriteAsync(ex.Message);
+                    await httpContext.Response.WriteResponseAsync(ex.Message, isPipeTest);
                     responseWritten.SetResult(null);
                 }
             }, new TestServiceContext(LoggerFactory)))
@@ -1148,14 +1185,16 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
         [Theory]
-        [InlineData("gzip")]
-        [InlineData("chunked, gzip")]
-        public async Task ConnectionClosedWhenChunkedIsNotFinalTransferCoding(string responseTransferEncoding)
+        [InlineData("gzip", false)]
+        [InlineData("chunked, gzip", false)]
+        [InlineData("gzip", true)]
+        [InlineData("chunked, gzip", true)]
+        public async Task ConnectionClosedWhenChunkedIsNotFinalTransferCoding(string responseTransferEncoding, bool isPipeTest)
         {
             using (var server = new TestServer(async httpContext =>
             {
                 httpContext.Response.Headers["Transfer-Encoding"] = responseTransferEncoding;
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1194,15 +1233,17 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
         [Theory]
-        [InlineData("gzip")]
-        [InlineData("chunked, gzip")]
-        public async Task ConnectionClosedWhenChunkedIsNotFinalTransferCodingEvenIfConnectionKeepAliveSetInResponse(string responseTransferEncoding)
+        [InlineData("gzip", false)]
+        [InlineData("chunked, gzip", false)]
+        [InlineData("gzip", true)]
+        [InlineData("chunked, gzip", true)]
+        public async Task ConnectionClosedWhenChunkedIsNotFinalTransferCodingEvenIfConnectionKeepAliveSetInResponse(string responseTransferEncoding, bool isPipeTest)
         {
             using (var server = new TestServer(async httpContext =>
             {
                 httpContext.Response.Headers["Connection"] = "keep-alive";
                 httpContext.Response.Headers["Transfer-Encoding"] = responseTransferEncoding;
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1241,16 +1282,18 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
         [Theory]
-        [InlineData("chunked")]
-        [InlineData("gzip, chunked")]
-        public async Task ConnectionKeptAliveWhenChunkedIsFinalTransferCoding(string responseTransferEncoding)
+        [InlineData("chunked", false)]
+        [InlineData("gzip, chunked", false)]
+        [InlineData("chunked", true)]
+        [InlineData("gzip, chunked", true)]
+        public async Task ConnectionKeptAliveWhenChunkedIsFinalTransferCoding(string responseTransferEncoding, bool isPipeTest)
         {
             using (var server = new TestServer(async httpContext =>
             {
-                httpContext.Response.Headers["Transfer-Encoding"] = responseTransferEncoding;
+                httpContext.Response.Headers["Transfer-Encoding"] = responseTransferEncoding; 
 
                 // App would have to chunk manually, but here we don't care
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1284,8 +1327,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task FirstWriteVerifiedAfterOnStarting()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task FirstWriteVerifiedAfterOnStarting(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory) { ServerOptions = { AllowSynchronousIO = true } };
 
@@ -1302,7 +1347,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 httpContext.Response.ContentLength = response.Length - 1;
 
                 // If OnStarting is not run before verifying writes, an error response will be sent.
-                httpContext.Response.Body.Write(response, 0, response.Length);
+                httpContext.Response.WriteResponse(response, 0, response.Length, isPipeTest);
                 return Task.CompletedTask;
             }, serviceContext))
             {
@@ -1328,8 +1373,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task SubsequentWriteVerifiedAfterOnStarting()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SubsequentWriteVerifiedAfterOnStarting(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory) { ServerOptions = { AllowSynchronousIO = true } };
 
@@ -1346,8 +1393,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 httpContext.Response.ContentLength = response.Length - 1;
 
                 // If OnStarting is not run before verifying writes, an error response will be sent.
-                httpContext.Response.Body.Write(response, 0, response.Length / 2);
-                httpContext.Response.Body.Write(response, response.Length / 2, response.Length - response.Length / 2);
+                httpContext.Response.WriteResponse(response, 0, response.Length / 2, isPipeTest);
+                httpContext.Response.WriteResponse(response, response.Length / 2, response.Length - response.Length / 2, isPipeTest);
                 return Task.CompletedTask;
             }, serviceContext))
             {
@@ -1375,8 +1422,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task FirstWriteAsyncVerifiedAfterOnStarting()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task FirstWriteAsyncVerifiedAfterOnStarting(bool isPipeTest)
         {
             using (var server = new TestServer(httpContext =>
             {
@@ -1391,7 +1440,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 httpContext.Response.ContentLength = response.Length - 1;
 
                 // If OnStarting is not run before verifying writes, an error response will be sent.
-                return httpContext.Response.Body.WriteAsync(response, 0, response.Length);
+                return httpContext.Response.WriteResponseBodyAsync(response, 0, response.Length, isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1416,8 +1465,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task SubsequentWriteAsyncVerifiedAfterOnStarting()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SubsequentWriteAsyncVerifiedAfterOnStarting(bool isPipeTest)
         {
             using (var server = new TestServer(async httpContext =>
             {
@@ -1432,8 +1483,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 httpContext.Response.ContentLength = response.Length - 1;
 
                 // If OnStarting is not run before verifying writes, an error response will be sent.
-                await httpContext.Response.Body.WriteAsync(response, 0, response.Length / 2);
-                await httpContext.Response.Body.WriteAsync(response, response.Length / 2, response.Length - response.Length / 2);
+                await httpContext.Response.WriteResponseBodyAsync(response, 0, response.Length / 2, isPipeTest);
+                await httpContext.Response.WriteResponseBodyAsync(response, response.Length / 2, response.Length - response.Length / 2, isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1460,12 +1511,14 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task WhenResponseAlreadyStartedResponseEndedBeforeConsumingRequestBody()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WhenResponseAlreadyStartedResponseEndedBeforeConsumingRequestBody(bool isPipeTest)
         {
             using (var server = new TestServer(async httpContext =>
             {
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1645,13 +1698,15 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 && ((BadHttpRequestException)w.Exception).StatusCode == StatusCodes.Status400BadRequest);
         }
 
-        [Fact]
-        public async Task Sending100ContinueAndResponseSendsChunkTerminatorBeforeConsumingRequestBody()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task Sending100ContinueAndResponseSendsChunkTerminatorBeforeConsumingRequestBody(bool isPipeTest)
         {
             using (var server = new TestServer(async httpContext =>
             {
                 await httpContext.Request.Body.ReadAsync(new byte[1], 0, 1);
-                await httpContext.Response.WriteAsync("hello, world");
+                await httpContext.Response.WriteResponseAsync("hello, world", isPipeTest);
             }, new TestServiceContext(LoggerFactory)))
             {
                 using (var connection = server.CreateConnection())
@@ -1976,8 +2031,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
 
-        [Fact]
-        public async Task ThrowingInOnStartingResultsInFailedWritesAnd500Response()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ThrowingInOnStartingResultsInFailedWritesAnd500Response(bool isPipeTest)
         {
             var callback1Called = false;
             var callback2CallCount = 0;
@@ -2000,7 +2057,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                     throw onStartingException;
                 }, null);
 
-                var writeException = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await response.Body.FlushAsync());
+                var writeException = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await response.FlushResponseAsync(isPipeTest));
                 Assert.Same(onStartingException, writeException.InnerException);
             }, testContext))
             {
@@ -2035,8 +2092,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             Assert.Equal(2, TestApplicationErrorLogger.Messages.Where(message => message.LogLevel == LogLevel.Error).Count());
         }
 
-        [Fact]
-        public async Task ThrowingInOnCompletedIsLogged()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ThrowingInOnCompletedIsLogged(bool isPipeTest)
         {
             var testContext = new TestServiceContext(LoggerFactory);
 
@@ -2059,7 +2118,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
 
                 response.Headers["Content-Length"] = new[] { "11" };
 
-                await response.Body.WriteAsync(Encoding.ASCII.GetBytes("Hello World"), 0, 11);
+                await response.WriteResponseBodyAsync(Encoding.ASCII.GetBytes("Hello World"), 0, 11, isPipeTest);
             }, testContext))
             {
                 using (var connection = server.CreateConnection())
@@ -2085,8 +2144,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             Assert.True(onCompletedCalled2);
         }
 
-        [Fact]
-        public async Task ThrowingAfterWritingKillsConnection()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ThrowingAfterWritingKillsConnection(bool isPipeTest)
         {
             var testContext = new TestServiceContext(LoggerFactory);
 
@@ -2102,7 +2163,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 }, null);
 
                 response.Headers["Content-Length"] = new[] { "11" };
-                await response.Body.WriteAsync(Encoding.ASCII.GetBytes("Hello World"), 0, 11);
+                await response.WriteResponseBodyAsync(Encoding.ASCII.GetBytes("Hello World"), 0, 11, isPipeTest);
                 throw new Exception();
             }, testContext))
             {
@@ -2127,8 +2188,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             Assert.Single(TestApplicationErrorLogger.Messages, message => message.LogLevel == LogLevel.Error);
         }
 
-        [Fact]
-        public async Task ThrowingAfterPartialWriteKillsConnection()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ThrowingAfterPartialWriteKillsConnection(bool isPipeTest)
         {
             var testContext = new TestServiceContext(LoggerFactory);
 
@@ -2144,7 +2207,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 }, null);
 
                 response.Headers["Content-Length"] = new[] { "11" };
-                await response.Body.WriteAsync(Encoding.ASCII.GetBytes("Hello"), 0, 5);
+                await response.WriteResponseBodyAsync(Encoding.ASCII.GetBytes("Hello"), 0, 5, isPipeTest);
                 throw new Exception();
             }, testContext))
             {
@@ -2170,8 +2233,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
 
-        [Fact]
-        public async Task NoErrorsLoggedWhenServerEndsConnectionBeforeClient()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task NoErrorsLoggedWhenServerEndsConnectionBeforeClient(bool isPipeTest)
         {
             var testContext = new TestServiceContext(LoggerFactory);
 
@@ -2179,7 +2244,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             {
                 var response = httpContext.Response;
                 response.Headers["Content-Length"] = new[] { "11" };
-                await response.Body.WriteAsync(Encoding.ASCII.GetBytes("Hello World"), 0, 11);
+                await response.WriteResponseBodyAsync(Encoding.ASCII.GetBytes("Hello World"), 0, 11, isPipeTest);
             }, testContext))
             {
                 using (var connection = server.CreateConnection())
@@ -2560,8 +2625,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task OnStartingCallbacksAreCalledInLastInFirstOutOrder()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task OnStartingCallbacksAreCalledInLastInFirstOutOrder(bool isPipeTest)
         {
             const string response = "hello, world";
 
@@ -2585,7 +2652,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 }, null);
 
                 context.Response.ContentLength = response.Length;
-                await context.Response.WriteAsync(response);
+                await context.Response.WriteResponseAsync(response, isPipeTest);
             }, testContext))
             {
                 using (var connection = server.CreateConnection())
@@ -2612,8 +2679,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             Assert.Equal(2, callOrder.Pop());
         }
 
-        [Fact]
-        public async Task OnCompletedCallbacksAreCalledInLastInFirstOutOrder()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task OnCompletedCallbacksAreCalledInLastInFirstOutOrder(bool isPipeTest)
         {
             const string response = "hello, world";
 
@@ -2637,7 +2706,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 }, null);
 
                 context.Response.ContentLength = response.Length;
-                await context.Response.WriteAsync(response);
+                await context.Response.WriteResponseAsync(response, isPipeTest);
             }, testContext))
             {
                 using (var connection = server.CreateConnection())
@@ -2665,8 +2734,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
 
-        [Fact]
-        public async Task SynchronousWritesAllowedByDefault()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SynchronousWritesAllowedByDefault(bool isPipeTest)
         {
             var firstRequest = true;
 
@@ -2690,7 +2761,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                     var ioEx = Assert.Throws<InvalidOperationException>(() => context.Response.Body.Write(Encoding.ASCII.GetBytes("What!?"), 0, 6));
                     Assert.Equal(CoreStrings.SynchronousWritesDisallowed, ioEx.Message);
 
-                    await context.Response.Body.WriteAsync(Encoding.ASCII.GetBytes("Hello2"), 0, 6);
+                    await context.Response.WriteResponseBodyAsync(Encoding.ASCII.GetBytes("Hello2"), 0, 6, isPipeTest);
                 }
             }, new TestServiceContext(LoggerFactory)))
             {
@@ -2716,8 +2787,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task SynchronousWritesCanBeDisallowedGlobally()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SynchronousWritesCanBeDisallowedGlobally(bool isPipeTest)
         {
             var testContext = new TestServiceContext(LoggerFactory)
             {
@@ -2735,7 +2808,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 var ioEx = Assert.Throws<InvalidOperationException>(() => context.Response.Body.Write(Encoding.ASCII.GetBytes("What!?"), 0, 6));
                 Assert.Equal(CoreStrings.SynchronousWritesDisallowed, ioEx.Message);
 
-                return context.Response.Body.WriteAsync(Encoding.ASCII.GetBytes("Hello!"), 0, 6);
+                return context.Response.WriteResponseBodyAsync(Encoding.ASCII.GetBytes("Hello!"), 0, 6, isPipeTest);
             }, testContext))
             {
                 using (var connection = server.CreateConnection())
@@ -2785,6 +2858,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 await server.StopAsync();
             }
         }
+
+        // TODO add tests for GetMemory+Advance and other methods in HttpResponsePipeWriter
 
         private static async Task ResponseStatusCodeSetBeforeHttpContextDispose(
             ITestSink testSink,
