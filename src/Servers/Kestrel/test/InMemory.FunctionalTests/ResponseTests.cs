@@ -2355,15 +2355,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                         "Host:",
                         "",
                         "");
-                    try
-                    {
-                        await connection.WaitForConnectionClose();
-                        Assert.False(true); // Should never be hit
-                    }
-                    catch (ConnectionAbortedException connectionAbortedException)
-                    {
-                        Assert.Equal(expectedException, connectionAbortedException.InnerException);
-                    }
+                    await connection.ReceiveEnd(
+                        "HTTP/1.1 200 OK",
+                        $"Date: {testContext.DateHeaderValue}",
+                        "Content-Length: 11",
+                        "",
+                        "");
                 }
                 await server.StopAsync();
             }
