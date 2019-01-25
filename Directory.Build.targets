@@ -102,7 +102,7 @@
 
   <Target Name="_CreateHelixPayloadInner" 
     DependsOnTargets="Publish;CollectXunitConsoleRunner" 
-    Condition="'$(BuildHelixPayload)' == 'true' AND ($(HelixTargetQueue.StartsWith('Windows')) OR '$(TargetFrameworkIdentifier)' != '.NETFramework')" 
+    Condition="'$(BuildHelixPayload)' == 'true' AND ($(HelixTargetQueue.Contains('Windows')) OR '$(TargetFrameworkIdentifier)' != '.NETFramework')" 
     Returns="@(HelixPayload)">
 
     <ConvertToAbsolutePath Paths="$(PublishDir)">
@@ -110,17 +110,17 @@
     </ConvertToAbsolutePath>
 
     <!-- Windows NetCore -->
-    <ItemGroup Condition="'$(TargetFrameworkIdentifier)' != '.NETFramework' AND $(HelixTargetQueue.StartsWith('Windows'))" >
+    <ItemGroup Condition="'$(TargetFrameworkIdentifier)' != '.NETFramework' AND $(HelixTargetQueue.Contains('Windows'))" >
         <_CopyItems Include="$(MSBuildThisFileDirectory)test\vstest\runtests.cmd" />
     </ItemGroup>
 
     <!-- Windows NetFramework -->
-    <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework' AND $(HelixTargetQueue.StartsWith('Windows'))" >
+    <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework' AND $(HelixTargetQueue.Contains('Windows'))" >
         <_CopyItems Include="$(MSBuildThisFileDirectory)test\xunit\runtests.cmd" />
     </ItemGroup>
 
     <!-- NonWindows -->
-    <ItemGroup Condition="$(HelixTargetQueue.StartsWith('Windows'))"  >
+    <ItemGroup Condition="$(HelixTargetQueue.Contains('Windows'))"  >
         <_CopyItems Include="$(MSBuildThisFileDirectory)test\vstest\runtests.sh" />
     </ItemGroup>
 
@@ -131,8 +131,8 @@
         <TestAssembly>$(TargetFileName)</TestAssembly>
         <TestName>$(MSBuildProjectName)-$(TargetFramework)</TestName>
         <!-- Look into how to be able to use $(NETCoreSdkVersion) -->
-        <Command Condition="$(HelixTargetQueue.StartsWith('Windows'))">runtests.cmd $(TargetFileName) $(NETCoreSdkVersion) $(MicrosoftNETCoreAppPackageVersion)</Command>
-        <Command Condition="!$(HelixTargetQueue.StartsWith('Windows'))">./runtests.sh $(TargetFileName) $(NETCoreSdkVersion) $(MicrosoftNETCoreAppPackageVersion)</Command>
+        <Command Condition="$(HelixTargetQueue.Contains('Windows'))">runtests.cmd $(TargetFileName) $(NETCoreSdkVersion) $(MicrosoftNETCoreAppPackageVersion)</Command>
+        <Command Condition="!$(HelixTargetQueue.Contains('Windows'))">./runtests.sh $(TargetFileName) $(NETCoreSdkVersion) $(MicrosoftNETCoreAppPackageVersion)</Command>
         <TestTimeout>$(DistributedTestTimeout)</TestTimeout>
       </HelixPayload>
     </ItemGroup>
