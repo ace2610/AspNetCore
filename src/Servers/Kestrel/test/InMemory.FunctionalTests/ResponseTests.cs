@@ -139,8 +139,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
-        public async Task ResponseBodyWriteAsyncCanBeCancelled()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task ResponseBodyWriteAsyncCanBeCancelled(bool isPipeTest)
         {
             var serviceContext = new TestServiceContext(LoggerFactory);
             var cts = new CancellationTokenSource();

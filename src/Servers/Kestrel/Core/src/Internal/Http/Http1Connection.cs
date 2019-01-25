@@ -52,8 +52,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                 _context.ConnectionContext,
                 _context.ServiceContext.Log,
                 _context.TimeoutControl,
-                this,
-                _context.MemoryPool);
+                this);
 
             Input = _context.Transport.Input;
             Output = _http1Output;

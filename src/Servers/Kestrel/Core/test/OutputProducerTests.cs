@@ -95,8 +95,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 connectionContext,
                 serviceContext.Log,
                 Mock.Of<ITimeoutControl>(),
-                Mock.Of<IHttpMinResponseDataRateFeature>(),
-                _memoryPool);
+                Mock.Of<IHttpMinResponseDataRateFeature>());
 
             return socketOutput;
         }
