@@ -35,7 +35,7 @@
     <Creator>aspnetcore</Creator>
 
     <HelixTargetQueues>
-      pr-windows.10.amd64-addsqlservertowin10q
+      pr-Windows.10.amd64-addsqlservertowin10q
       <!-- Ubuntu.1810.Amd64.Open;
       Windows.10.Amd64.Open;
       OSX.1012.Amd64.Open;
