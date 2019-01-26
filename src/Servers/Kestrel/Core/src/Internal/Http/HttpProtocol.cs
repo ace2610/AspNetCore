@@ -1107,6 +1107,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             // For the same reason we call CheckLastWrite() in Content-Length responses.
             PreventRequestAbortedCancellation();
 
+            _requestProcessingStatus = RequestProcessingStatus.HeadersFlushed;
+
             await Output.WriteStreamSuffixAsync();
 
             if (_keepAlive)

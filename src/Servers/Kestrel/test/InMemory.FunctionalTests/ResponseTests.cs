@@ -2276,6 +2276,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 await server.StopAsync();
             }
         }
+
         [Fact]
         public async Task StartAsyncDefaultToChunkedResponse()
         {
@@ -2307,13 +2308,105 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
         [Fact]
+        public async Task StartAsyncWithContentLengthAndEmptyWriteStillCallsFinalFlush()
+        {
+            var testContext = new TestServiceContext(LoggerFactory);
+
+            using (var server = new TestServer(async httpContext =>
+            {
+                httpContext.Response.ContentLength = 0;
+                await httpContext.Response.StartAsync();
+                await httpContext.Response.WriteAsync("");
+            }, testContext))
+            {
+                using (var connection = server.CreateConnection())
+                {
+                    await connection.Send(
+                        "GET / HTTP/1.1",
+                        "Host:",
+                        "",
+                        "");
+                    await connection.Receive(
+                        "HTTP/1.1 200 OK",
+                        $"Date: {testContext.DateHeaderValue}",
+                        "Content-Length: 0",
+                        "");
+                }
+                await server.StopAsync();
+            }
+        }
+
+        [Fact]
+        public async Task StartAsyncAndEmptyWriteStillCallsFinalFlush()
+        {
+            var testContext = new TestServiceContext(LoggerFactory);
+
+            using (var server = new TestServer(async httpContext =>
+            {
+                await httpContext.Response.StartAsync();
+                await httpContext.Response.WriteAsync("");
+            }, testContext))
+            {
+                using (var connection = server.CreateConnection())
+                {
+                    await connection.Send(
+                        "GET / HTTP/1.1",
+                        "Host:",
+                        "",
+                        "");
+                    await connection.Receive(
+                        "HTTP/1.1 200 OK",
+                        $"Date: {testContext.DateHeaderValue}",
+                        "Transfer-Encoding: chunked",
+                        "",
+                        "0",
+                        "",
+                        "");
+                }
+                await server.StopAsync();
+            }
+        }
+
+        [Fact]
+        public async Task StartAsyncWithSingleChunkedWriteStillWritesSuffix()
+        {
+            var testContext = new TestServiceContext(LoggerFactory);
+
+            using (var server = new TestServer(async httpContext =>
+            {
+                await httpContext.Response.StartAsync();
+                await httpContext.Response.WriteAsync("Hello World!");
+            }, testContext))
+            {
+                using (var connection = server.CreateConnection())
+                {
+                    await connection.Send(
+                        "GET / HTTP/1.1",
+                        "Host:",
+                        "",
+                        "");
+                    await connection.Receive(
+                        "HTTP/1.1 200 OK",
+                        $"Date: {testContext.DateHeaderValue}",
+                        "Transfer-Encoding: chunked",
+                        "",
+                        "c",
+                        "Hello World!",
+                        "0",
+                        "",
+                        "");
+                }
+                await server.StopAsync();
+            }
+        }
+
+        [Fact]
         public async Task StartAsyncWithoutFlushStartsResponse()
         {
             var testContext = new TestServiceContext(LoggerFactory);
 
             using (var server = new TestServer(async httpContext =>
             {
-                httpContext.Response.Headers["Content-Length"] = new[] { "0" };
                 await httpContext.Response.StartAsync();
                 Assert.True(httpContext.Response.HasStarted);
             }, testContext))
@@ -2328,7 +2421,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                     await connection.Receive(
                         "HTTP/1.1 200 OK",
                         $"Date: {testContext.DateHeaderValue}",
-                        "Content-Length: 0",
+                        "",
+                        "0",
                         "",
                         "");
                 }
@@ -2343,7 +2437,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             var expectedException = new Exception();
             using (var server = new TestServer(async httpContext =>
             {
-                httpContext.Response.Headers["Content-Length"] = new[] { "11" };
+                httpContext.Response.ContentLength = 11;
                 await httpContext.Response.StartAsync();
                 throw expectedException;
             }, testContext))
@@ -2375,12 +2469,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
 
             using (var server = new TestServer(async httpContext =>
             {
-                httpContext.Response.Headers["Content-Length"] = new[] { "0" };
                 await httpContext.Response.StartAsync();
                 Assert.True(httpContext.Response.HasStarted);
 
                 // Verify that the response isn't flushed by verifying the TCS isn't set
-                var res = tcs.Task.Wait(1);
+                var res = await Task.WhenAny(tcs.Task, Task.Delay(1000)) == tcs.Task;
                 Assert.False(res);
             }, testContext))
             {
@@ -2394,11 +2487,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                     await connection.Receive(
                         "HTTP/1.1 200 OK",
                         $"Date: {testContext.DateHeaderValue}",
-                        "Content-Length: 0",
+                        "",
+                        "0",
                         "",
                         "");
-                    // Means the flush finished early.
-                    tcs.SetResult(new object());
+                    // If we reach this point before the app exits, this means the flush finished early.
+                    tcs.SetResult(null);
                 }
                 await server.StopAsync();
             }
@@ -2442,7 +2536,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
 
             using (var server = new TestServer(async httpContext =>
             {
-                httpContext.Response.Headers["Content-Length"] = new[] { "0" };
                 await httpContext.Response.StartAsync();
                 await httpContext.Response.Body.FlushAsync();
                 Assert.True(httpContext.Response.HasStarted);
@@ -2458,7 +2551,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                     await connection.Receive(
                         "HTTP/1.1 200 OK",
                         $"Date: {testContext.DateHeaderValue}",
-                        "Content-Length: 0",
+                        "",
+                        "0",
                         "",
                         "");
                 }
