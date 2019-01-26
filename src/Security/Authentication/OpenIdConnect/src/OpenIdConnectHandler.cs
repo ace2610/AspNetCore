@@ -12,6 +12,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -853,16 +854,16 @@ namespace Microsoft.AspNetCore.Authentication.OpenIdConnect
             responseMessage.EnsureSuccessStatusCode();
             var userInfoResponse = await responseMessage.Content.ReadAsStringAsync();
 
-            JObject user;
+            JsonDocument user;
             var contentType = responseMessage.Content.Headers.ContentType;
             if (contentType.MediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase))
             {
-                user = JObject.Parse(userInfoResponse);
+                user = JsonDocument.Parse(userInfoResponse);
             }
             else if (contentType.MediaType.Equals("application/jwt", StringComparison.OrdinalIgnoreCase))
             {
                 var userInfoEndpointJwt = new JwtSecurityToken(userInfoResponse);
-                user = JObject.FromObject(userInfoEndpointJwt.Payload);
+                user = JsonDocument.Parse(userInfoEndpointJwt.Payload.SerializeToJson());
             }
             else
             {
@@ -1144,7 +1145,7 @@ namespace Microsoft.AspNetCore.Authentication.OpenIdConnect
             return context;
         }
 
-        private async Task<UserInformationReceivedContext> RunUserInformationReceivedEventAsync(ClaimsPrincipal principal, AuthenticationProperties properties, OpenIdConnectMessage message, JObject user)
+        private async Task<UserInformationReceivedContext> RunUserInformationReceivedEventAsync(ClaimsPrincipal principal, AuthenticationProperties properties, OpenIdConnectMessage message, JsonDocument user)
         {
             Logger.UserInformationReceived(user.ToString());
 
