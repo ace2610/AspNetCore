@@ -88,6 +88,35 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2
             throw new NotImplementedException();
         }
 
+        public ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return new ValueTask<FlushResult>(Task.FromCanceled<FlushResult>(cancellationToken));
+            }
+
+            lock (_dataWriterLock)
+            {
+                if (_completed)
+                {
+                    return default;
+                }
+
+                if (_startedWritingDataFrames)
+                {
+                    // If there's already been response data written to the stream, just wait for that. Any header
+                    // should be in front of the data frames in the connection pipe. Trailers could change things.
+                    return _flusher.FlushAsync(this, cancellationToken);
+                }
+                else
+                {
+                    // Flushing the connection pipe ensures headers already in the pipe are flushed even if no data
+                    // frames have been written.
+                    return _frameWriter.FlushAsync(this, cancellationToken);
+                }
+            }
+        }
+
         public ValueTask<FlushResult> Write100ContinueAsync()
         {
             lock (_dataWriterLock)
@@ -169,7 +198,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2
 
         private async ValueTask<FlushResult> ProcessDataWrites()
         {
-            var flushResult = new FlushResult();
+            FlushResult flushResult = default;
             try
             {
                 ReadResult readResult;
@@ -205,7 +234,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2
             }
 
             _dataPipe.Reader.Complete();
-            // what do I return?
+
             return flushResult;
         }
 
@@ -220,35 +249,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2
                 useSynchronizationContext: false,
                 minimumSegmentSize: KestrelMemoryPool.MinimumSegmentSize
             ));
-
-        public ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken)
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return new ValueTask<FlushResult>(Task.FromCanceled<FlushResult>(cancellationToken));
-            }
-
-            lock (_dataWriterLock)
-            {
-                if (_completed)
-                {
-                    return default;
-                }
-
-                if (_startedWritingDataFrames)
-                {
-                    // If there's already been response data written to the stream, just wait for that. Any header
-                    // should be in front of the data frames in the connection pipe. Trailers could change things.
-                    return _flusher.FlushAsync(this, cancellationToken);
-                }
-                else
-                {
-                    // Flushing the connection pipe ensures headers already in the pipe are flushed even if no data
-                    // frames have been written.
-                    return _frameWriter.FlushAsync(this, cancellationToken);
-                }
-            }
-        }
 
         public void Advance(int bytes)
         {

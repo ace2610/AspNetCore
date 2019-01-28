@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipelines;
 using System.Net;
@@ -113,12 +114,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             set => ResponseHeaders = value;
         }
 
-        Stream IHttpResponseFeature.Body
-        {
-            get => ResponseBody;
-            set => ResponseBody = value;
-        }
-
         CancellationToken IHttpRequestLifetimeFeature.RequestAborted
         {
             get => RequestAborted;
@@ -195,10 +190,61 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             }
         }
 
+        protected PipeWriter _userSetPipeWriter;
+        protected Stream _userSetResponseBody;
+        protected PipeWriter _cachedResponsePipeWriter;
+        protected Stream _cachedResponseBodyStream;
+
         PipeWriter IResponseBodyPipeFeature.ResponseBodyPipe
         {
-            get => ResponsePipeWriter;
-            set => ResponsePipeWriter = value;
+            get
+            {
+                if (_userSetPipeWriter != null)
+                {
+                    return _userSetPipeWriter;
+                }
+
+                // Need to store something about the original stream here to check if it has been updated.
+                if (!object.ReferenceEquals(_cachedResponseBodyStream, ResponseBody))
+                {
+                    ResponsePipeWriter = new StreamPipeWriter(ResponseBody);
+                    _cachedResponseBodyStream = ResponseBody;
+                    // TODO dispose
+                }
+
+                return ResponsePipeWriter;
+            }
+            set
+            {
+                _userSetPipeWriter = value ?? throw new ArgumentNullException(nameof(value));
+                ResponsePipeWriter = _userSetPipeWriter;
+            }
+        }
+
+
+        Stream IHttpResponseFeature.Body
+        {
+            get
+            {
+                if (_userSetResponseBody != null)
+                {
+                    return _userSetResponseBody;
+                }
+
+                if (!object.ReferenceEquals(_cachedResponsePipeWriter, ResponsePipeWriter))
+                {
+                    ResponseBody = new WriteOnlyPipeStream(ResponsePipeWriter);
+                    _cachedResponsePipeWriter = ResponsePipeWriter;
+                    // TODO dispose?
+                }
+
+                return ResponseBody;
+            }
+            set
+            {
+                _userSetResponseBody = value ?? throw new ArgumentNullException(nameof(value));
+                ResponseBody = _userSetResponseBody;
+            }
         }
 
         protected void ResetHttp1Features()

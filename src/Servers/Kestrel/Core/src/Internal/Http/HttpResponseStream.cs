@@ -2,18 +2,11 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
-using System.IO;
-using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure;
-using Microsoft.AspNetCore.Http.Features;
 using System.IO.Pipelines;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 {
-    // make this wrap a HttpResponsePipe which calls directly into OutputProducer
-    // Let's just start with a type for PipeWriter'
     internal class HttpResponseStream : WriteOnlyPipeStream
     {
         private readonly HttpResponsePipeWriter _pipeWriter;

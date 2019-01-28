@@ -300,13 +300,15 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         {
             if (_streams == null)
             {
-                // TODO we may want to create another class to wrap the pipeReader/writer.
                 var pipeWriter = new HttpResponsePipeWriter(this);
                 _streams = new Streams(bodyControl: this, pipeWriter);
                 ResponsePipeWriter = pipeWriter;
             }
 
             (RequestBody, ResponseBody) = _streams.Start(messageBody);
+
+            _cachedResponseBodyStream = ResponseBody;
+            _cachedResponsePipeWriter = ResponsePipeWriter;
         }
 
         public void StopStreams() => _streams.Stop();
@@ -1262,12 +1264,26 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 
         public Memory<byte> GetMemory(int sizeHint = 0)
         {
+            ThrowIfResponseNotStarted();
+
             return Output.GetMemory(sizeHint);
         }
 
         public Span<byte> GetSpan(int sizeHint = 0)
         {
+            ThrowIfResponseNotStarted();
+
             return Output.GetSpan(sizeHint);
+        }
+
+        [StackTraceHidden]
+        private void ThrowIfResponseNotStarted()
+        {
+            if (!HasResponseStarted)
+            {
+                throw new InvalidOperationException("Cannot call GetMemory() until response has started. " +
+                    "Call HttpResponse.StartAsync() before calling GetMemory().");
+            }
         }
 
         public ValueTask<FlushResult> FlushPipeAsync(CancellationToken cancellationToken)

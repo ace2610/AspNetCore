@@ -79,7 +79,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             _currentIHttpMaxRequestBodySizeFeature = this;
             _currentIHttpBodyControlFeature = this;
             _currentIHttpResponseStartFeature = this;
-            _currentIResponseBodyPipeFeature = this;
 
             _currentIServiceProvidersFeature = null;
             _currentIHttpAuthenticationFeature = null;

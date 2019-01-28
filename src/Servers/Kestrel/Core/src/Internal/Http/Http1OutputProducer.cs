@@ -26,7 +26,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         private readonly IHttpMinResponseDataRateFeature _minResponseDataRateFeature;
         private readonly TimingPipeFlusher _flusher;
 
-        // This locks access to to all of the below fields
+        // This locks access to all of the below fields
         private readonly object _contextLock = new object();
 
         private bool _completed = false;
@@ -34,7 +34,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         private long _unflushedBytes;
 
         private readonly PipeWriter _pipeWriter;
-
 
         public Http1OutputProducer(
             PipeWriter pipeWriter,
@@ -64,7 +63,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 
         public ValueTask<FlushResult> WriteDataToPipeAsync(ReadOnlySpan<byte> buffer, CancellationToken cancellationToken = default)
         {
-            // TODO locking
             if (cancellationToken.IsCancellationRequested)
             {
                 return new ValueTask<FlushResult>(Task.FromCanceled<FlushResult>(cancellationToken));
@@ -85,8 +83,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 
         public Memory<byte> GetMemory(int sizeHint = 0)
         {
-            // before this we should check hasStarted.
-
+            // if we are chunking, we need to create a segment shorter than original...
             return _pipeWriter.GetMemory(sizeHint);
         }
 

@@ -314,12 +314,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2
 
         private async ValueTask<FlushResult> WriteDataAsync(int streamId, StreamOutputFlowControl flowControl, ReadOnlySequence<byte> data, long dataLength, bool endStream)
         {
-            var flushResult = new FlushResult();
+            FlushResult flushResult = default;
 
             while (dataLength > 0)
             {
                 OutputFlowControlAwaitable availabilityAwaitable;
-                // TODO I think I can rewrite this logic to not allocate a value task every time.
                 var writeTask = new ValueTask<FlushResult>(new FlushResult());
 
                 lock (_writeLock)

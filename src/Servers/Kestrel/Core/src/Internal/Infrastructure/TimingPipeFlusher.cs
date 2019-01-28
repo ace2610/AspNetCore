@@ -22,9 +22,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure
         private readonly IKestrelTrace _log;
 
         private readonly object _flushLock = new object();
-        // TODO allocations here.
         private Task<FlushResult> _lastFlushTask = null;
-        private readonly FlushResult _emptyFlushResult = new FlushResult();
 
         public TimingPipeFlusher(
             PipeWriter writer,
@@ -90,7 +88,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure
 
             try
             {
-                // TODO remove await?
                 return await _lastFlushTask;
             }
             catch (OperationCanceledException ex) when (outputAborter != null)
@@ -112,7 +109,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
-            return _emptyFlushResult;
+            return default;
         }
     }
 }
