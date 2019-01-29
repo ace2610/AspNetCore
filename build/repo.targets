@@ -100,10 +100,6 @@
   </Target>
 
 <!-- will move into korebuild -->
-  <PropertyGroup>
-    <DefaultHelixTestTimeout>00:30:00</DefaultHelixTestTimeout>
-  </PropertyGroup>
-
   <Target Name="Helix" DependsOnTargets="Restore">
     <ItemGroup>
       <CsProjects Include="@(ProjectToBuild)" Condition="'%(Extension)' == '.csproj'" />
