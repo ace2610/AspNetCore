@@ -131,7 +131,7 @@
         <!-- Look into how to be able to use $(NETCoreSdkVersion) -->
         <Command Condition="$(HelixTargetQueue.Contains('Windows'))">runtests.cmd $(TargetFileName) $(NETCoreSdkVersion) $(MicrosoftNETCoreAppPackageVersion)</Command>
         <Command Condition="!$(HelixTargetQueue.Contains('Windows'))">./runtests.sh $(TargetFileName) $(NETCoreSdkVersion) $(MicrosoftNETCoreAppPackageVersion)</Command>
-        <TestTimeout>$(DistributedTestTimeout)</TestTimeout>
+        <TestTimeout>00:30:00</TestTimeout>
       </HelixPayload>
     </ItemGroup>
   </Target>
