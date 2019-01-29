@@ -7,7 +7,6 @@
     <PackageTags>aspnetcore;identity;membership</PackageTags>
     <IsTestProject>false</IsTestProject>
     <IsShippingPackage>true</IsShippingPackage>
-    <IsProductPackage>true</IsProductPackage>
     <BuildHelixPayload>false</BuildHelixPayload>
   </PropertyGroup>
 
