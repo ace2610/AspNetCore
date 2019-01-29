@@ -2785,6 +2785,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
         // TODO add tests for GetMemory+Advance and other methods in HttpResponsePipeWriter
+        // TODO add regression tests for stream scenarios
+        // TODO add tests for pipewriter setters
 
         private static async Task ResponseStatusCodeSetBeforeHttpContextDispose(
             ITestSink testSink,

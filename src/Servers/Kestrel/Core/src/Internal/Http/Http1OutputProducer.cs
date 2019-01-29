@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Text;
 using System.Threading;
@@ -32,8 +33,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         private bool _completed = false;
         private bool _aborted;
         private long _unflushedBytes;
-
+        private bool _autoChunk;
         private readonly PipeWriter _pipeWriter;
+
+        // For chunked responses
+        private int _advancedBytesForChunk;
+        private Memory<byte> _currentChunkMemory;
 
         public Http1OutputProducer(
             PipeWriter pipeWriter,
@@ -83,18 +88,54 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 
         public Memory<byte> GetMemory(int sizeHint = 0)
         {
-            // if we are chunking, we need to create a segment shorter than original...
-            return _pipeWriter.GetMemory(sizeHint);
+            if (_autoChunk)
+            {
+                if (_advancedBytesForChunk == 4089)
+                {
+                    // Chunk is completely done
+                    WriteChunkedFromPipe();
+                }
+                _currentChunkMemory = _pipeWriter.GetMemory(sizeHint);
+                var actualMemory = _currentChunkMemory.Slice(5 + _advancedBytesForChunk, _currentChunkMemory.Length - 5 - 2 - _advancedBytesForChunk);
+
+                return actualMemory;
+            }
+            else
+            {
+                return _pipeWriter.GetMemory(sizeHint);
+            }
         }
 
         public Span<byte> GetSpan(int sizeHint = 0)
         {
-            return _pipeWriter.GetSpan(sizeHint);
+            if (_autoChunk)
+            {
+                if (_advancedBytesForChunk == 4089)
+                {
+                    // Chunk is completely done
+                    WriteChunkedFromPipe();
+                }
+                _currentChunkMemory = _pipeWriter.GetMemory(sizeHint);
+                var actualMemory = _currentChunkMemory.Slice(5 + _advancedBytesForChunk, _currentChunkMemory.Length - 5 - 2 - _advancedBytesForChunk);
+
+                return actualMemory.Span;
+            }
+            else
+            {
+                return _pipeWriter.GetMemory(sizeHint).Span;
+            }
         }
 
         public void Advance(int bytes)
         {
-            _pipeWriter.Advance(bytes);
+            if (_autoChunk)
+            {
+                _advancedBytesForChunk += bytes;
+            }
+            else
+            {
+                _pipeWriter.Advance(bytes);
+            }
         }
 
         public void CancelPendingFlush()
@@ -102,7 +143,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             _pipeWriter.CancelPendingFlush();
         }
 
-        // This method is for chunked http responses
         public ValueTask<FlushResult> WriteAsync<T>(Func<PipeWriter, T, long> callback, T state, CancellationToken cancellationToken)
         {
             lock (_contextLock)
@@ -120,7 +160,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             return FlushAsync(cancellationToken);
         }
 
-        public void WriteResponseHeaders(int statusCode, string reasonPhrase, HttpResponseHeaders responseHeaders)
+        public void WriteResponseHeaders(int statusCode, string reasonPhrase, HttpResponseHeaders responseHeaders, bool autoChunk)
         {
             lock (_contextLock)
             {
@@ -141,6 +181,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                 writer.Commit();
 
                 _unflushedBytes += writer.BytesCommitted;
+                _autoChunk = autoChunk;
             }
         }
 
@@ -163,7 +204,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         {
             // Abort can be called after Dispose if there's a flush timeout.
             // It's important to still call _lifetimeFeature.Abort() in this case.
-
             lock (_contextLock)
             {
                 if (_aborted)
@@ -193,6 +233,13 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                     return default;
                 }
 
+                if (_autoChunk)
+                {
+                    // If there is data that was chunked before writing (ex someone did GetMemory->Advance->WriteAsync)
+                    // make sure to write whatever was advanced first
+                    WriteChunkedFromPipe();
+                }
+
                 var writer = new BufferWriter<PipeWriter>(_pipeWriter);
                 if (buffer.Length > 0)
                 {
@@ -211,6 +258,28 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                     this,
                     cancellationToken);
             }
+        }
+
+        // TODO comments here as this is pretty complex
+        private void WriteChunkedFromPipe()
+        {
+            var writer = new BufferWriter<PipeWriter>(_pipeWriter);
+
+            Debug.Assert(_advancedBytesForChunk < 4096);
+
+            if (_advancedBytesForChunk > 0)
+            {
+                var count = writer.WriteBeginChunkBytes(_advancedBytesForChunk);
+                if (count < 5)
+                {
+                    _currentChunkMemory.Slice(5, _advancedBytesForChunk).CopyTo(_currentChunkMemory.Slice(count));
+                }
+
+                writer.Write(_currentChunkMemory.Slice(count, _advancedBytesForChunk).Span);
+                writer.WriteEndChunkBytes();
+                writer.Commit();
+            }
+            _advancedBytesForChunk = 0;
         }
     }
 }

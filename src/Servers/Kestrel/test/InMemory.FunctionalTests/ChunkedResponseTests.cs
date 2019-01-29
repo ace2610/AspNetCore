@@ -476,7 +476,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 var response = httpContext.Response;
                 await response.StartAsync();
 
-                var memory = response.BodyPipe.GetMemory(5000); // This will return 4096
+                var memory = response.BodyPipe.GetMemory(5000); // This will return 4089
                 var fisrtPartOfResponse = Encoding.ASCII.GetBytes(new string('a', memory.Length));
                 fisrtPartOfResponse.CopyTo(memory);
                 response.BodyPipe.Advance(memory.Length);
@@ -501,8 +501,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                         $"Date: {testContext.DateHeaderValue}",
                         "Transfer-Encoding: chunked",
                         "",
-                        "1000",
-                        new string('a', 4096),
+                        "ff9",
+                        new string('a', 4089),
                         "6",
                         "World!",
                         "0",
@@ -550,8 +550,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                         $"Date: {testContext.DateHeaderValue}",
                         "Transfer-Encoding: chunked",
                         "",
-                        "1000",
-                        new string('a', 4096),
+                        "ff9",
+                        new string('a', 4089),
                         "6",
                         "World!",
                         "0",
@@ -562,6 +562,13 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 await server.StopAsync();
             }
         }
+
+        // Clean up tests here (and add many more)
+        // GetMemory, Advance, Write
+        // GetMemory(16-255) Advance, Write
+        // GetMemory Advance Advance Advance
+        // GetMemory Write Advance (isn't supported?)
+        // Tests with sizeHint
     }
 }
 
